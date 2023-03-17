@@ -129,5 +129,108 @@ END;
 
 /*
     프로시저 연습
-    
+    1. BUY_PROC 프로시저 구현하기
+    2. 처리할 일 
+        1) 구매내역 테이블에 구매내역을 추가(INSERT)한다.
+        2) 제품 테이블의 재고 내역을 수정(UPDATE)한다.
+        3) 고객 테이블의 포인트를 수정(UPDATE)한다. 
 */
+
+-- 테이블 삭제하기
+DROP TABLE BUY_TBL;
+DROP TABLE CUST_TBL;
+DROP TABLE PROD_TBL;
+
+
+-- 시퀀스 삭제하기
+DROP SEQUENCE BUY_SEQ;
+
+-- 제품 테이블
+CREATE TABLE PROD_TBL(
+    P_CODE NUMBER NOT NULL,
+    P_NAME VARCHAR2(20 BYTE),
+    P_PRICE NUMBER,
+    P_STOCK NUMBER
+);
+
+ALTER TABLE PROD_TBL
+    ADD CONSTRAINT PK_PROD PRIMARY KEY(P_CODE);
+INSERT INTO PROD_TBL(P_CODE, P_NAME, P_PRICE, P_STOCK) VALUES(1000, '홈런볼', 1000, 100);
+INSERT INTO PROD_TBL(P_CODE, P_NAME, P_PRICE, P_STOCK) VALUES(1001, '맛동산', 2000, 100);
+COMMIT;
+
+-- 고객 테이블 구성하기 
+CREATE TABLE CUST_TBL(
+    C_NO NUMBER NOT NULL,
+    C_NAME VARCHAR2(20 BYTE),
+    C_POINT NUMBER
+);
+
+-- 기본키
+ALTER TABLE CUST_TBL
+    ADD CONSTRAINT PK_CUST PRIMARY KEY(C_NO);
+INSERT INTO CUST_TBL(C_NO, C_NAME, C_POINT) VALUES(1, '정숙', 0);
+INSERT INTO CUST_TBL(C_NO, C_NAME, C_POINT) VALUES(2, '재홍', 0);
+COMMIT;
+
+-- 구매 테이블 
+CREATE TABLE BUY_TBL(
+    B_NO NUMBER NOT NULL,
+    C_NO NUMBER NOT NULL, -- 누가 구매했다. 고객번호
+    P_CODE NUMBER,
+    B_AMOUNT NUMBER -- 구매수량 
+);
+
+-- 기본키
+ALTER TABLE BUY_TBL
+    ADD CONSTRAINT PK_BUY PRIMARY KEY(B_NO);
+ALTER TABLE BUY_TBL
+    ADD CONSTRAINT FK_BUY_CUST FOREIGN KEY(C_NO) 
+        REFERENCES CUST_TBL(C_NO) 
+            ON DELETE CASCADE; -- NOT NULL 처리해서 옵션주기
+-- 외래키
+ALTER TABLE BUY_TBL
+    ADD CONSTRAINT FK_BUY_PROD FOREIGN KEY(P_CODE)
+        REFERENCES PROD_TBL (P_CODE)
+            ON DELETE SET NULL;
+CREATE SEQUENCE BUY_SEQ
+    NOCACHE;  
+    
+-- BUY_PROC 프로시저 정의
+CREATE OR REPLACE PROCEDURE BUY_PROC(CNO IN CUST_TBL.C_NO%TYPE, PCODE IN PROD_TBL.P_CODE%TYPE, BUY_AMOUNT IN BUY_TBL.B_AMOUNT%TYPE)
+IS
+BEGIN 
+    --  1) 구매내역 테이블에 구매내역을 추가(INSERT)한다.
+    INSERT INTO BUY_TBL(B_NO, C_NO, P_CODE, B_AMOUNT) VALUES(BUY_SEQ.NEXTVAL, CNO, PCODE, BUY_AMOUNT);
+
+    --  2) 제품 테이블의 재고 내역을 수정(UPDATE)한다.
+    UPDATE PROD_TBL SET P_STOCK = P_STOCK - BUY_AMOUNT WHERE P_CODE = PCODE;
+    --  3) 고객 테이블의 포인트를 수정(UPDATE)한다. 
+    --      총 구매액의 10%를 정수로 올림처리해서 포인트로 준다.
+    /* CEIL(가격 * 구매수량 * 0.1) <- 포인트 */
+   UPDATE CUST_TBL SET C_POINT = C_POINT + CEIL((SELECT P_PRICE FROM PROD_TBL WHERE P_CODE = PCODE)* BUY_AMOUNT * 0.1) WHERE C_NO = CNO;
+    /* 가격은 제품 테이블에 셀렉트 
+    구매수량 바이 어마운트 */
+    -- 4) 커밋
+    COMMIT;
+    
+EXCEPTION 
+
+    WHEN OTHERS THEN -- 모든 예외의 대해서
+        
+        -- 예외 사유 확인
+        DBMS_OUTPUT.PUT_LINE(SQLCODE || '(' || SQLERRM || ')' );
+        
+        -- 언제 실패해도 돌아가기 어떤 작업을 했든 커밋 이전에 했던 업데이트를 취소해라.
+        ROLLBACK;
+END;
+
+-- BUY_PROC 프로시저 호출(물건 구매 시켜보기)
+EXECUTE BUY_PROC(1, 1000, 10); -- 고객번호 1, 제품코드 1000, 구매수량 10
+
+BEGIN
+    BUY_PROC(2, 1001, 5); -- 고객번호 2, 제품코드 1001, 구매수량 5
+END;
+
+
+
